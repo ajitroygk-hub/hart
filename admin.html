@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WinGo Admin Center</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, sans-serif; }
+        body { background-color: #121418; color: #e1e6ed; padding: 20px; display: flex; justify-content: center; }
+        .admin-container { width: 100%; max-width: 500px; }
+        .card { background: #1e222d; padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #2d3446; }
+        .card-title { font-size: 16px; font-weight: bold; color: #ff3b3b; margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between; }
+        .timer-info { background: #14161d; padding: 12px; border-radius: 8px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
+        .timer-box { font-size: 22px; font-weight: bold; color: #ff3b3b; }
+        .form-group { margin-bottom: 12px; }
+        label { display: block; font-size: 12px; color: #a0aec0; margin-bottom: 6px; }
+        select, input { width: 100%; padding: 10px; background: #14161d; border: 1px solid #333d4d; border-radius: 6px; color: #fff; outline: none; }
+        .btn { width: 100%; padding: 12px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn-danger { background: #ff3b3b; color: white; }
+        .btn-success { background: #18b660; color: white; }
+        .btn-blue { background: #0284c7; color: white; }
+        .dep-item { background: #14161d; padding: 10px; border-radius: 6px; margin: 8px 0; display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+    </style>
+</head>
+<body>
+
+<div class="admin-container">
+    <!-- Outcome Controller -->
+    <div class="card">
+        <div class="card-title">
+            <span>🎮 Result Controller</span>
+            <span style="font-size:10px; color:#18b660;">LIVE API SYNC</span>
+        </div>
+        
+        <div class="timer-info">
+            <div>
+                <div style="font-size: 11px; color: #888;">Active Period</div>
+                <div id="adminPeriod" style="font-size: 15px; font-weight: bold; color:#18b660;">Loading...</div>
+            </div>
+            <div>
+                <div style="font-size: 11px; color: #888; text-align: right;">Time Left</div>
+                <div class="timer-box" id="adminTimer">00:00</div>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Mode:</label>
+            <select id="gameMode" onchange="syncAdmin()">
+                <option value="30s">30 Seconds</option>
+                <option value="1m">1 Minute</option>
+                <option value="3m">3 Minutes</option>
+                <option value="5m">5 Minutes</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>Set Forced Result for Active Period:</label>
+            <select id="forcedResult">
+                <option value="AUTO">-- Auto / Random Result --</option>
+                <option value="0">0 (Red-Violet / Small)</option>
+                <option value="1">1 (Green / Small)</option>
+                <option value="2">2 (Red / Small)</option>
+                <option value="3">3 (Green / Small)</option>
+                <option value="4">4 (Red / Small)</option>
+                <option value="5">5 (Green-Violet / Big)</option>
+                <option value="6">6 (Red / Big)</option>
+                <option value="7">7 (Green / Big)</option>
+                <option value="8">8 (Red / Big)</option>
+                <option value="9">9 (Green / Big)</option>
+            </select>
+        </div>
+
+        <button class="btn btn-danger" onclick="savePrediction()">Save Result Control</button>
+    </div>
+
+    <!-- Deposit Approval -->
+    <div class="card">
+        <div class="card-title">📥 Deposit Approvals</div>
+        <button class="btn btn-blue" onclick="loadDeposits()" style="margin-bottom:10px;">Refresh Deposits</button>
+        <div id="depositList">No pending deposits</div>
+    </div>
+
+    <!-- Gift Generator -->
+    <div class="card">
+        <div class="card-title">🎁 Gift Code Generator</div>
+        <div class="form-group">
+            <label>Custom Code</label>
+            <input type="text" id="giftCodeInput" placeholder="e.g. WINGO500">
+        </div>
+        <div class="form-group">
+            <label>Amount (₹)</label>
+            <input type="number" id="giftAmountInput" placeholder="e.g. 50">
+        </div>
+        <button class="btn btn-success" onclick="createGiftCode()">Generate Gift Code</button>
+    </div>
+</div>
+
+<script>
+    const API_BASE = "https://all-api-g2gm.onrender.com";
+
+    async function apiCall(endpoint, options = {}, retries = 3) {
+        for (let i = 0; i < retries; i++) {
+            try {
+                const res = await fetch(`${API_BASE}${endpoint}`, options);
+                const contentType = res.headers.get("content-type");
+
+                if (!contentType || !contentType.includes("application/json")) {
+                    throw new Error(`Server returned non-JSON response (${res.status}). Check backend deploy.`);
+                }
+
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Request failed');
+                return data;
+            } catch (err) {
+                if (i === retries - 1) throw err;
+                await new Promise(r => setTimeout(r, 1500));
+            }
+        }
+    }
+
+    async function syncAdmin() {
+        const mode = document.getElementById('gameMode').value;
+        try {
+            const data = await apiCall(`/api/wingo/state/${mode}`);
+            document.getElementById('adminPeriod').textContent = data.period;
+
+            const mins = String(Math.floor(data.timeLeft / 60)).padStart(2, '0');
+            const secs = String(data.timeLeft % 60).padStart(2, '0');
+            document.getElementById('adminTimer').textContent = `${mins} : ${secs}`;
+        } catch (err) {
+            console.error("Sync:", err.message);
+        }
+    }
+
+    async function savePrediction() {
+        const val = document.getElementById('forcedResult').value;
+        const mode = document.getElementById('gameMode').value;
+        if (val === "AUTO") return alert("AUTO mode selected.");
+
+        try {
+            const res = await apiCall('/api/admin/set-result', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode, number: Number(val) })
+            });
+            alert(res.message);
+        } catch (err) { alert(err.message); }
+    }
+
+    async function loadDeposits() {
+        try {
+            const data = await apiCall('/api/admin/pending-deposits');
+            const box = document.getElementById('depositList');
+            if (!data.pending || data.pending.length === 0) {
+                box.innerHTML = 'No pending deposits';
+                return;
+            }
+            box.innerHTML = data.pending.map(d => `
+                <div class="dep-item">
+                    <div><b>${d.phone}</b><br>₹${d.amount} | Txn: ${d.txnId}</div>
+                    <div style="display:flex; gap:5px;">
+                        <button onclick="actionDep('${d.id}', 'accept')" style="background:#18b660; color:#fff; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;">Accept</button>
+                        <button onclick="actionDep('${d.id}', 'reject')" style="background:#ff3b3b; color:#fff; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;">Reject</button>
+                    </div>
+                </div>
+            `).join('');
+        } catch (err) { alert(err.message); }
+    }
+
+    async function actionDep(reqId, action) {
+        try {
+            const res = await apiCall('/api/admin/action-deposit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reqId, action })
+            });
+            alert(res.message);
+            loadDeposits();
+        } catch (err) { alert(err.message); }
+    }
+
+    async function createGiftCode() {
+        const code = document.getElementById('giftCodeInput').value.trim();
+        const amount = document.getElementById('giftAmountInput').value;
+        try {
+            const res = await apiCall('/api/admin/create-giftcode', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code, amount: Number(amount) })
+            });
+            alert(res.message);
+            document.getElementById('giftCodeInput').value = '';
+            document.getElementById('giftAmountInput').value = '';
+        } catch (err) { alert(err.message); }
+    }
+
+    setInterval(syncAdmin, 1000);
+    loadDeposits();
+</script>
+</body>
+</html>
+              
