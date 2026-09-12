@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WinGo Platform</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, sans-serif; }
+    body { background-color: #0f172a; color: #f8fafc; padding: 15px; display: flex; justify-content: center; }
+    .app-container { width: 100%; max-width: 480px; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    h3 { color: #38bdf8; margin-bottom: 12px; font-size: 18px; }
+    input, select, button { width: 100%; padding: 12px; margin: 6px 0; border-radius: 6px; border: 1px solid #475569; background: #0f172a; color: white; outline: none; }
+    button { background: #0284c7; border: none; font-weight: bold; cursor: pointer; transition: 0.2s; }
+    button:hover { background: #0369a1; }
+    .timer-display { background: #020617; border-radius: 8px; padding: 12px; text-align: center; font-size: 28px; font-weight: bold; color: #f59e0b; margin: 10px 0; border: 1px solid #1e293b; }
+    .badge-btn { background: #d97706; margin-top: 10px; }
+    .history-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #334155; font-size: 13px; }
+    .Red { color: #ef4444; font-weight: bold; }
+    .Green { color: #22c55e; font-weight: bold; }
+    .Violet { color: #a855f7; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+<div class="app-container">
+
+  <!-- Account Dashboard -->
+  <div class="card">
+    <h3>👤 Account Panel</h3>
+    <div id="authBox">
+      <input type="text" id="regPhone" placeholder="Phone Number">
+      <input type="password" id="regPass" placeholder="Password">
+      <input type="text" id="regInvite" placeholder="Invite Code (Required)">
+      <button onclick="userRegister()">Register Account</button>
+    </div>
+    <div id="userBox" style="display:none;">
+      <p>Mobile: <b id="uPhone" style="color:#38bdf8;">-</b></p>
+      <p>Wallet Balance: <b id="uBalance" style="color:#22c55e;">₹0.00</b></p>
+      <button class="badge-btn" onclick="claimLossCashback()">Claim 50% Loss Cashback</button>
+    </div>
+  </div>
+
+  <!-- WinGo Game Engine -->
+  <div class="card">
+    <h3>🎮 Live WinGo Game</h3>
+    <label style="font-size:12px; color:#94a3b8;">Select Mode:</label>
+    <select id="gameMode" onchange="loadGameState()">
+      <option value="30s">30 Seconds</option>
+      <option value="1m">1 Minute</option>
+      <option value="3m">3 Minutes</option>
+      <option value="5m">5 Minutes</option>
+    </select>
+
+    <div style="font-size: 12px; color: #94a3b8; margin-top: 8px;">Active Period: <b id="activePeriod" style="color:#fff;">Loading...</b></div>
+    <div class="timer-display" id="timerBox">00:00</div>
+
+    <h4 style="margin: 12px 0 6px 0; font-size:14px;">Recent History</h4>
+    <div id="historyBox">No history loaded</div>
+  </div>
+
+  <!-- Wallet Deposit -->
+  <div class="card">
+    <h3>💳 Deposit Funds</h3>
+    <input type="number" id="depAmt" placeholder="Amount (Min ₹100)">
+    <input type="text" id="depTxn" placeholder="Transaction Hash / UTR ID">
+    <button onclick="submitDeposit()">Submit Deposit</button>
+  </div>
+
+</div>
+
+<script>
+  const API_BASE = "https://all-api-g2gm.onrender.com";
+  let activePhone = null;
+
+  async function apiCall(endpoint, options = {}, retries = 4) {
+    for (let i = 0; i < retries; i++) {
+      try {
+        const res = await fetch(`${API_BASE}${endpoint}`, options);
+        const contentType = res.headers.get("content-type");
+        
+        if (!contentType || !contentType.includes("application/json")) {
+          throw new Error(`Server returned HTML error (${res.status}). Check backend deploy.`);
+        }
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        return data;
+      } catch (err) {
+        if (i === retries - 1) throw err;
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+  }
+
+  async function userRegister() {
+    const phone = document.getElementById('regPhone').value.trim();
+    const password = document.getElementById('regPass').value.trim();
+    const inviteCode = document.getElementById('regInvite').value.trim();
+
+    try {
+      const res = await apiCall('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, password, inviteCode })
+      });
+      alert(res.message);
+      activePhone = phone;
+      document.getElementById('authBox').style.display = 'none';
+      document.getElementById('userBox').style.display = 'block';
+      document.getElementById('uPhone').innerText = activePhone;
+      refreshBalance();
+    } catch (err) { alert(err.message); }
+  }
+
+  async function refreshBalance() {
+    if (!activePhone) return;
+    try {
+      const res = await apiCall(`/api/user/${activePhone}`);
+      document.getElementById('uBalance').innerText = `₹${res.balance.toFixed(2)}`;
+    } catch (err) { console.error(err); }
+  }
+
+  async function loadGameState() {
+    const mode = document.getElementById('gameMode').value;
+    try {
+      const data = await apiCall(`/api/wingo/state/${mode}`);
+      document.getElementById('activePeriod').innerText = data.period;
+
+      const m = String(Math.floor(data.timeLeft / 60)).padStart(2, '0');
+      const s = String(data.timeLeft % 60).padStart(2, '0');
+      document.getElementById('timerBox').innerText = `${m}:${s}`;
+
+      const histHtml = data.history.map(h => `
+        <div class="history-row">
+          <span>${h.period}</span>
+          <span>Num: <b>${h.number}</b> (${h.size})</span>
+          <span>${h.colors.map(c => `<span class="${c}">${c}</span>`).join('/')}</span>
+        </div>
+      `).join('');
+      document.getElementById('historyBox').innerHTML = histHtml || 'No data';
+    } catch (err) { console.error(err); }
+  }
+
+  async function submitDeposit() {
+    if (!activePhone) return alert('Register/Login first!');
+    const amount = document.getElementById('depAmt').value;
+    const txnId = document.getElementById('depTxn').value.trim();
+
+    try {
+      const res = await apiCall('/api/wallet/deposit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: activePhone, amount, txnId })
+      });
+      alert(res.message);
+      document.getElementById('depAmt').value = '';
+      document.getElementById('depTxn').value = '';
+    } catch (err) { alert(err.message); }
+  }
+
+  async function claimLossCashback() {
+    if (!activePhone) return;
+    try {
+      const res = await apiCall('/api/wallet/claim-loss-bonus', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: activePhone })
+      });
+      alert(res.message);
+      refreshBalance();
+    } catch (err) { alert(err.message); }
+  }
+
+  setInterval(loadGameState, 1000);
+  setInterval(refreshBalance, 5000);
+</script>
+
+</body>
+</html>
